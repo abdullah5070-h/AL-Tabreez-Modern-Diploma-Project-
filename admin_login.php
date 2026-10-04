@@ -5,30 +5,39 @@ require 'dbconnect.php';
 $message = '';
 $registration_success = false;
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    if (isset($_POST['login'])) {
-        // Login logic
-        $username = $_POST['username'] ?? '';
-        $password = $_POST['password'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-        // Query to select the user
-        $stmt = $pdo->prepare("SELECT * FROM `staff` WHERE `username` = ? and `password` = ?");
-        $stmt->execute([$username,$password]);
-        $row = $stmt->fetch();
+    // Fetch the user by username only
+    $stmt = $pdo->prepare("SELECT * FROM `staff` WHERE `username` = ?");
+    $stmt->execute([$username]);
+    $row = $stmt->fetch();
 
-        if ($row) {
-            $_SESSION['admin_logged_in'] = true;
-            $_SESSION['admin'] = $row['username']; 
-            header("Location: admin.php");
-
-            exit;
-        } else {
-            $message = 'Incorrect username or password.';
+    $valid = false;
+    if ($row) {
+        if (password_verify($password, $row['password'])) {
+            // Hashed password (accounts created via admin_register.php)
+            $valid = true;
+        } elseif (hash_equals($row['password'], $password)) {
+            // Legacy plain-text password: accept once, then upgrade to a hash
+            $valid = true;
+            $upd = $pdo->prepare("UPDATE `staff` SET `password` = ? WHERE `username` = ?");
+            $upd->execute([password_hash($password, PASSWORD_DEFAULT), $row['username']]);
         }
-}
+    }
+
+    if ($valid) {
+        session_regenerate_id(true);
+        $_SESSION['admin_logged_in'] = true;
+        $_SESSION['admin'] = $row['username'];
+        header("Location: admin.php");
+        exit;
+    } else {
+        $message = 'Incorrect username or password.';
+    }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
